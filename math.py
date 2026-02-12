@@ -89,6 +89,12 @@ and succeed in exams.
 
 Even when explaining use only math expressions no latex code
 
+When the student explicitly asks for methodology,
+you explain the general strategy before solving.
+You guide step-by-step and invite participation.
+You avoid giving the full final answer immediately.
+
+
 Rules:
 - Use short math-style phrases.
 - Prefer parentheses and linear notation.
@@ -224,7 +230,37 @@ Please:
         st.session_state.tutor_feedback = tutor_feedback
         st.session_state.last_latex = latex
 
-    
+if st.button("Teach me how to solve this"):
+
+    latex = image_to_latex(canvas_result.image_data)
+
+    if not latex:
+        st.warning("I couldn't read the exercise clearly yet.")
+    else:
+        methodology_prompt = f"""
+The student wrote the following mathematical exercise:
+
+{latex}
+
+The student does not know how to solve it.
+
+Please:
+- Identify what type of problem this is.
+- Explain the general method clearly.
+- Break the solution into structured steps.
+- Do NOT immediately give the final answer.
+- Encourage the student to try Step 1 first.
+"""
+
+        methodology_response = ai_call(
+            TUTOR_SYSTEM_PROMPT,
+            methodology_prompt,
+            temperature=0.3
+        )
+
+        st.session_state.methodology = methodology_response
+        st.session_state.last_latex = latex
+   
 st.markdown("---")
 # -----------------------------
 # TUTOR CONVERSATION
@@ -247,6 +283,10 @@ messages += st.session_state.chat
 if "tutor_feedback" in st.session_state:
     st.markdown("### Tutor’s note")
     st.write(st.session_state.tutor_feedback)
+
+if "methodology" in st.session_state:
+    st.markdown("### How to approach this problem")
+    st.write(st.session_state.methodology)
 
 if "last_latex" in st.session_state:
     st.latex(st.session_state.last_latex)
