@@ -6,7 +6,7 @@ import numpy as np
 import io
 import base64
 import requests
-
+import hashlib
 
 ACCESS_CODE = "1a2b3c!8"
 
@@ -156,14 +156,15 @@ def clean_latex(latex: str) -> str:
         latex = latex.replace(k, v)
     return latex.strip()
 
-def ai_call(system_prompt: str, user_content: str, temperature: float = 0.2) -> str:
+def ai_call(system_prompt: str, user_content: str, max_tokens=500,temperature: float = 0.2) -> str:
     response = client.chat.completions.create(
         model="deepseek-chat",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
         ],
-        temperature=temperature
+        temperature=temperature,
+        max_tokens=max_tokens
     )
     return response.choices[0].message.content.strip()
 
@@ -219,10 +220,11 @@ Please:
 - If there is a small mistake, gently invite the student to check it.
 - If a rule is forgotten, ask first, then give it clearly.
 """
-
-        tutor_feedback = ai_call(
+        with st.spinner("Thinking carefully..."):
+            tutor_feedback = ai_call(
             TUTOR_SYSTEM_PROMPT,
             tutor_user_prompt,
+            max_tokens=500,
             temperature=0.3
         )
 
@@ -251,10 +253,11 @@ Please:
 - Do NOT immediately give the final answer.
 - Encourage the student to try Step 1 first.
 """
-
-        methodology_response = ai_call(
+        with st.spinner("Thinking carefully..."):
+            methodology_response = ai_call(
             TUTOR_SYSTEM_PROMPT,
             methodology_prompt,
+            max_tokens=500,
             temperature=0.3
         )
 

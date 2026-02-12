@@ -4,3 +4,4 @@ pillow
 requests
 numpy
 streamlit-drawable-canvas
+hashlib
