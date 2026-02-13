@@ -15,36 +15,53 @@ code = st.text_input("Enter access code", type="password")
 if code != ACCESS_CODE:
     st.stop()
 
+
+
 st.set_page_config(layout="wide")
+
+st.markdown("""
+<style>
+#floating-toolbar {
+    position: fixed;
+    top: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    background: white;
+    padding: 10px 16px;
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+}
+</style>
+""", unsafe_allow_html=True)
+
+if "tool" not in st.session_state:
+    st.session_state.tool = "pen"
+
 if "canvas_version" not in st.session_state:
     st.session_state.canvas_version = 0
 
-if "tool" not in st.session_state:
-    st.session_state.tool = "Pen"
+st.markdown(
+    """
+    <style>
+        section[data-testid="stSidebar"] {
+            width: 50px !important; # Set your desired width here
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-
-
-if "canvas_key" not in st.session_state:
-    st.session_state.canvas_key = 0
-
-
-
-with st.container():
-    st.markdown('<div class="canvas-toolbar">', unsafe_allow_html=True)
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
+with st.sidebar:
     if st.button("✏️ Pen"):
-        st.session_state.tool = "Pen"
-
-with col2:
+        st.session_state.tool = "pen"
     if st.button("🧽 Eraser"):
-        st.session_state.tool = "Eraser"
-
-with col3:
-    if st.button("🧹 Clear All"):
+        st.session_state.tool = "eraser"
+    if st.button("🗑️ Clear"):
         st.session_state.canvas_version += 1
+
+
+st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
 
 
 
@@ -136,12 +153,14 @@ else:  # Eraser
 
 canvas_key = f"{layer}_{st.session_state.canvas_version}"
 
+stroke_width = 3 if st.session_state.tool == "pen" else 20
+
 canvas_result=st_canvas(
     stroke_width=stroke_width,
-    stroke_color=stroke_color,
+    stroke_color="#000000",
     background_color="#FFFFFF",
-    height=6000,
-    width=1200,
+    height=10000,
+    width=1300,
     drawing_mode="freedraw",
     key=f"canvas_{st.session_state.canvas_version}",
 )
