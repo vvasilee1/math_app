@@ -15,7 +15,7 @@ code = st.text_input("Enter access code", type="password")
 if code != ACCESS_CODE:
     st.stop()
 
-
+st.set_page_config(layout="wide")
 if "canvas_version" not in st.session_state:
     st.session_state.canvas_version = 0
 
@@ -141,7 +141,7 @@ canvas_result=st_canvas(
     stroke_color=stroke_color,
     background_color="#FFFFFF",
     height=6000,
-    width=1000,
+    width=1200,
     drawing_mode="freedraw",
     key=f"canvas_{st.session_state.canvas_version}",
 )
