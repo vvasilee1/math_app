@@ -295,15 +295,7 @@ if "last_latex" in st.session_state:
     st.latex(st.session_state.last_latex)
 
 
-st.markdown("---")
 
-# -----------------------------
-# REINFORCEMENT AREA
-# -----------------------------
-st.subheader("Extra Practice (if needed)")
 
-st.markdown(
-    "- If something was difficult, we can do 2–3 more exercises together.\n"
-    "- Tell me and I’ll give you similar ones.\n"
-    "- If everything was clear, we move on."
-)
+
+

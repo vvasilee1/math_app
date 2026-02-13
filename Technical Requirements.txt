@@ -1,12 +1,8 @@
 Technical requirements
 
-
-1.Canvas + tool UI setup (you already did most)
-2.Capture strokes → image → AI prompt
-3.Write AI tutor prompts & responses for 1 concept
-4.Backend / session tracking
-5.Minor UX improvements (add space, eraser, submission)
-6.Testing with yourself + small mock student
+1.Better Looking UI 
+2.Graph display
+3.Error tracking System
 Costs
 
 28 cents 1000 photos Gemini 3 Flash
