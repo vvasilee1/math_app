@@ -144,20 +144,26 @@ st.markdown(
 # TOOLS
 # -----------------------------
 tool = st.radio("Tool", ["Pen", "Eraser"], horizontal=True)
-if st.session_state.tool == "Pen":
-    stroke_width = 3
+if st.session_state.tool == "pen":
     stroke_color = "#000000"
-else:  # Eraser
-    stroke_width = 10
-    stroke_color = "#FFFFFF"
+    stroke_width = 3
+
+elif st.session_state.tool == "eraser":
+    stroke_color = "#FFFFFF"   # SAME as background
+    stroke_width = 25          # big
+
+else:
+    stroke_color = "#000000"
+    stroke_width = 3
+
 
 canvas_key = f"{layer}_{st.session_state.canvas_version}"
 
-stroke_width = 3 if st.session_state.tool == "pen" else 20
+#stroke_width = 3 if st.session_state.tool == "pen" else 20
 
 canvas_result=st_canvas(
     stroke_width=stroke_width,
-    stroke_color="#000000",
+    stroke_color=stroke_color,
     background_color="#FFFFFF",
     height=10000,
     width=1300,
