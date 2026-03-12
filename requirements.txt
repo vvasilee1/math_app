@@ -5,3 +5,4 @@ requests
 numpy
 streamlit-drawable-canvas
 supabase
+matplotlib
