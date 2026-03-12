@@ -1,0 +1,38 @@
+. Άλλαξε τις λέξεις-κλειδιά (Keywords)
+Στη Siemens Energy, στη GE, ή στη Mitsubishi Power, οι θέσεις που ζητούν C++ και FEM/Numerical Analysis κρύβονται κάτω από τίτλους όπως:
+
+R&D Engineer - Simulation
+
+Numerical Methods Developer
+
+Digital Twin Engineer (Πολύ δημοφιλές τώρα στην ενέργεια)
+
+Software Architect for Embedded Systems
+
+Control Systems Engineer (Εκεί που οι διαφορικές εξισώσεις ελέγχουν τις τουρμπίνες σε πραγματικό χρόνο)
+
+2. Κοίταξε το οικοσύστημα "γύρω" από τη Siemens Energy
+Πολλές φορές η Siemens Energy αναθέτει το βαρύ κομμάτι του λογισμικού προσομοίωσης σε εξειδικευμένους συνεργάτες ή χρησιμοποιεί συγκεκριμένα εργαλεία. Ψάξε για:
+
+Ansys ή Siemens Digital Industries Software (DISW): Είναι το τμήμα της Siemens που φτιάχνει το λογισμικό (π.χ. Simcenter, NX). Εκεί η C++ είναι η "μητρική" γλώσσα.
+
+Modelon ή MathWorks (Munich/Berlin): Εταιρείες που φτιάχνουν τους solvers για ενεργειακά συστήματα.
+
+3. Το LinkedIn είναι ο σύμμαχός σου (Berlin Tech Scene)
+Το Βερολίνο έχει μια τεράστια σκηνή από "Deep Tech" startups που χρειάζονται μαθηματικούς που ξέρουν C++. Μην περιορίζεσαι μόνο σε κολοσσούς. Ψάξε για:
+
+Dexter Energy Services: Χρησιμοποιούν AI και προσομοιώσεις για την πρόβλεψη ενέργειας.
+
+TWAICE: (Μόναχο/Βερολίνο) Κορυφαία εταιρεία για Battery Digital Twins. Χρησιμοποιούν FEM για να προσομοιώσουν τη φθορά των μπαταριών.
+
+4. Φτιάξε το "Portfolio" σου για τη Γερμανική αγορά
+Για να σε προσέξει ένας recruiter στη Siemens Energy, πρέπει να δει το "Project" σου.
+
+Ανέβασε τον κώδικα που φτιάξαμε (με τον Symmetric Matrix, τον Cholesky και το FEM Mapping) στο GitHub.
+
+Ονόμασέ το κάτι εντυπωσιακό, π.χ.: High-Performance-1D-FEM-Solver-CPP.
+
+Στο βιογραφικό σου, μην γράψεις απλώς "C++". Γράψε: "Implementation of Finite Element Method solvers, optimizing for cache locality and memory-efficient symmetric matrix storage." Αυτό θα χτυπήσει αμέσως "καμπανάκι" στους μηχανικούς.
+
+
+

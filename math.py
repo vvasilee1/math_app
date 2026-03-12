@@ -1,323 +1,261 @@
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
+from supabase import create_client, Client
 from openai import OpenAI
 from PIL import Image
 import numpy as np
 import io
 import base64
 import requests
-import hashlib
+import pandas as pd
+from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
 
+# -----------------------------
+# 1. CONFIG & TRANSLATIONS
+# -----------------------------
 ACCESS_CODE = "1a2b3c!8"
 
-code = st.text_input("Enter access code", type="password")
+I18N = {
+    "English": {
+        "enter_code": "Enter access code",
+        "choose_layer": "Choose Layer",
+        "canvas_instr": "Write your exercises on the canvas.",
+        "tool_pen": "Pen",
+        "tool_eraser": "Eraser",
+        "check_work": "Check my work",
+        "teach_me": "Teach me how to solve this",
+        "month_review": "Month Review",
+        "tutor_thinking": "Thinking carefully...",
+        "tutor_note": "### Tutor’s note",
+        "how_to_solve": "### How to approach this problem",
+        "chat_placeholder": "Tell me what you're thinking...",
+        "lang_name": "English"
+    },
+    "Deutsch": {
+        "enter_code": "Zugangscode eingeben",
+        "choose_layer": "Ebene auswählen",
+        "canvas_instr": "Schreibe deine Übungen auf die Leinwand.",
+        "tool_pen": "Stift",
+        "tool_eraser": "Radiergummi",
+        "check_work": "Meine Arbeit prüfen",
+        "teach_me": "Erkläre mir den Weg",
+        "month_review": "Monatsrückblick",
+        "tutor_thinking": "Ich denke nach...",
+        "tutor_note": "### Notiz des Tutors",
+        "how_to_solve": "### Lösungsweg",
+        "chat_placeholder": "Schreib mir, was du denkst...",
+        "lang_name": "Deutsch"
+    }
+}
 
-if code != ACCESS_CODE:
-    st.stop()
+# -----------------------------
+# 2. SESSION STATE INIT
+# -----------------------------
+if "authenticated" not in st.session_state: st.session_state.authenticated = False
+if "user_id" not in st.session_state: st.session_state.user_id = "guest_user"
+if "canvas_version" not in st.session_state: st.session_state.canvas_version = 0
+if "chat" not in st.session_state: st.session_state.chat = []
+if "tool" not in st.session_state: st.session_state.tool = "pen"
 
+supabase: Client = create_client("https://kztiarfkgvwyxqzfnwfk.supabase.co", st.secrets["SUPABASE_API_KEY"])
 
+def display_parent_report(user_id):
+    st.markdown("## 📈 Στατιστικά Προόδου (Parent Report)")
+    
+    # Ανάκτηση δεδομένων από το Supabase
+    response = supabase.table("student_progress").select("*").eq("user_id", user_id).execute()
+    
+    if not response.data:
+        st.info("Δεν υπάρχουν ακόμα δεδομένα προόδου.")
+        return
 
-st.set_page_config(layout="wide")
+    df = pd.DataFrame(response.data)
+    
+    # Υπολογισμός Mastery Score
+    total_actions = len(df)
+    autonomous_actions = len(df[df['action_type'] == 'check_work'])
+    
+    # Ποσοστό προόδου
+    progress_percent = (autonomous_actions / total_actions) if total_actions > 0 else 0
+    
+    # Εμφάνιση Progress Bar
+    st.write(f"**Mastery: {int(progress_percent * 100)}%**")
+    st.progress(progress_percent)
+    
+    # Breakdown ανά Layer
+    st.markdown("### Ανάπτυξη ανά Ενότητα")
+    layer_stats = df.groupby('layer_name')['action_type'].value_counts().unstack().fillna(0)
+    for layer in layer_stats.index:
+        guided = layer_stats.loc[layer].get('teach_me', 0)
+        auto = layer_stats.loc[layer].get('check_work', 0)
+        layer_progress = auto / (auto + guided) if (auto + guided) > 0 else 0
+        st.write(f"{layer}: {int(layer_progress * 100)}%")
+        st.progress(layer_progress)
+# -----------------------------
+# 3. UI SETUP & AUTH
+# -----------------------------
+st.set_page_config(layout="wide", page_title="Socratic Math Tutor")
 
 st.markdown("""
-<style>
-#floating-toolbar {
-    position: fixed;
-    top: 90px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 10000;
-    background: white;
-    padding: 10px 16px;
-    border-radius: 10px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.2);
-}
-</style>
+    <style>
+        [data-testid="stSidebar"] { min-width: 160px; max-width: 160px; }
+    </style>
 """, unsafe_allow_html=True)
 
-if "tool" not in st.session_state:
-    st.session_state.tool = "pen"
+# --- SYSTEM LOGIN / SIGN UP ---
+if not st.session_state.authenticated:
+    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+    
+    with tab1:
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        if st.button("Log In"):
+            try:
+                # Σύνδεση στο Supabase
+                res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                st.session_state.user_id = res.user.id # Το μοναδικό ID του μαθητή
+                st.session_state.authenticated = True
+                st.rerun()
+            except Exception as e:
+                st.error("Invalid credentials. Try again!")
 
-if "canvas_version" not in st.session_state:
-    st.session_state.canvas_version = 0
-
-st.markdown(
-    """
-    <style>
-        section[data-testid="stSidebar"] {
-            width: 50px !important; # Set your desired width here
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+    with tab2:
+        new_email = st.text_input("New Email")
+        new_password = st.text_input("New Password", type="password")
+        if st.button("Create Account"):
+            try:
+                # Εγγραφή νέου χρήστη
+                res = supabase.auth.sign_up({"email": new_email, "password": new_password})
+                st.success("Account created! You can now log in.")
+            except Exception as e:
+                st.error(f"Error: {e}")
+    st.stop()
 
 with st.sidebar:
-    if st.button("✏️ Pen"):
-        st.session_state.tool = "pen"
-    if st.button("🧽 Eraser"):
-        st.session_state.tool = "eraser"
+    selected_lang = st.selectbox("🌍 Language", ["English", "Deutsch"])
+    texts = I18N[selected_lang]
+    st.divider()
+    if st.button(f"✏️ {texts['tool_pen']}"): st.session_state.tool = "pen"
+    if st.button(f"🧽 {texts['tool_eraser']}"): st.session_state.tool = "eraser"
     if st.button("🗑️ Clear"):
         st.session_state.canvas_version += 1
+        st.rerun()
+    st.divider()
+    show_report = st.checkbox("👨‍👩‍👧 Parent Dashboard")
 
+    if show_report:
+    # Καλούμε τη συνάρτηση που δημιουργήσαμε
+        display_parent_report(st.session_state.user_id)
 
-st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
-
-
-
-# CONFIG
 # -----------------------------
-api_key = st.secrets["DEEPSEEK_API_KEY"]
-st.write("DeepSeek key loaded:", bool(st.secrets.get("DEEPSEEK_API_KEY")))
+# 4. API & DATABASE
+# -----------------------------
+client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
 
-client = OpenAI(
-    api_key=st.secrets["DEEPSEEK_API_KEY"],
-    base_url="https://api.deepseek.com"
-)
-
-layers = [
-    "Layer 1: Fractions, Decimals, Powers",
-    "Layer 2: Identities, Factorization",
-    "Layer 3: Functions",
-    "Layer 4: Graphs of functions",
-    "Layer 5: Logarithms, Exponents, Sequences",
-    "Layer 6: Trigonometric functions & properties",
-    "Layer 7: Complex numbers",
-    "Layer 8: Continuity, Functional Equations",
-    "Layer 9: Derivatives, Integrals"
-]
 
 TUTOR_SYSTEM_PROMPT = """
-You are a calm and experienced mathematics tutor.
-You assume the student is capable and intelligent.
-You are not surprised by mistakes and you never rush.
-
-When there is a small arithmetic slip, you gently invite the student to check it.
-You normalize mistakes and remind the student that we are human, not machines.
-
-When a rule is forgotten, you first ask if the student remembers it.
-If they do not, you give the rule clearly and without friction.
-
-When the approach is wrong, you guide the student back to meaning.
-You speak simply, kindly, and with quiet confidence.
-
-Your goal is not to impress, but to help the student think clearly
-and succeed in exams.
-
-Even when explaining use only math expressions no latex code
-
-When the student explicitly asks for methodology,
-you explain the general strategy before solving.
-You guide step-by-step and invite participation.
-You avoid giving the full final answer immediately.
-
-
-Rules:
-- Use short math-style phrases.
-- Prefer parentheses and linear notation.
-
-
-
-
+You are a Socratic math tutor. Respond strictly in {language}.
+- Use LaTeX $...$ for ALL math.
+- Never use plain symbols like ^ or sqrt.
 """
 
 # -----------------------------
-# STATE INIT
+# 5. HELPERS
 # -----------------------------
 
 
-if "chat" not in st.session_state:
-    st.session_state.chat = []
+def save_event(action, layer, tags=[]):
+    try:
+        supabase.table("student_progress").insert({
+            "user_id": st.session_state.user_id,
+            "layer_name": layer,
+            "action_type": action,
+            "topic_tags": tags
+        }).execute()
+    except Exception: pass
 
-# -----------------------------
-# UI
-# -----------------------------
-layer = st.selectbox("Choose Layer", layers)
-st.header(layer)
-
-st.markdown(
-    "Write your own exercises on the canvas and solve them.\n"
-    "If something feels wrong or confusing, talk to me below."
-)
-
-# -----------------------------
-# TOOLS
-# -----------------------------
-tool = st.radio("Tool", ["Pen", "Eraser"], horizontal=True)
-if st.session_state.tool == "pen":
-    stroke_color = "#000000"
-    stroke_width = 3
-
-elif st.session_state.tool == "eraser":
-    stroke_color = "#FFFFFF"   # SAME as background
-    stroke_width = 25          # big
-
-else:
-    stroke_color = "#000000"
-    stroke_width = 3
-
-
-canvas_key = f"{layer}_{st.session_state.canvas_version}"
-
-#stroke_width = 3 if st.session_state.tool == "pen" else 20
-
-canvas_result=st_canvas(
-    stroke_width=stroke_width,
-    stroke_color=stroke_color,
-    background_color="#FFFFFF",
-    height=10000,
-    width=1300,
-    drawing_mode="freedraw",
-    key=f"canvas_{st.session_state.canvas_version}",
-)
-
-def clean_latex(latex: str) -> str:
-    replacements = {
-        r"\left": "",
-        r"\right": "",
-        r"\,": "",
-    }
-    for k, v in replacements.items():
-        latex = latex.replace(k, v)
-    return latex.strip()
-
-def ai_call(system_prompt: str, user_content: str, max_tokens=500,temperature: float = 0.2) -> str:
+def ai_call(system_prompt, user_content):
     response = client.chat.completions.create(
         model="deepseek-chat",
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt.format(language=texts['lang_name'])},
             {"role": "user", "content": user_content}
         ],
-        temperature=temperature,
-        max_tokens=max_tokens
+        temperature=0.3
     )
     return response.choices[0].message.content.strip()
 
-def image_to_latex(image_data: np.ndarray) -> str:
-    """
-    Convert canvas image data to LaTeX using Mathpix.
-    Returns an empty string if conversion fails.
-    """
-
-    if image_data is None:
-        return ""
-
-    # 1. Convert numpy array to PNG
+def image_to_latex(image_data):
+    if image_data is None: return ""
     image = Image.fromarray(image_data.astype("uint8"))
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
-
     img_base64 = base64.b64encode(buffer.getvalue()).decode()
+    res = requests.post("https://api.mathpix.com/v3/text",
+        headers={"app_id": st.secrets["MATHPIX_APP_ID"], "app_key": st.secrets["MATHPIX_APP_KEY"]},
+        json={"src": f"data:image/png;base64,{img_base64}", "formats": ["latex_styled"]})
+    return res.json().get("latex_styled", "")
 
-    # 2. Call Mathpix
-    response = requests.post(
-        "https://api.mathpix.com/v3/text",
-        headers={
-            "app_id": st.secrets["MATHPIX_APP_ID"],
-            "app_key": st.secrets["MATHPIX_APP_KEY"],
-            "Content-type": "application/json"
-        },
-        json={
-            "src": f"data:image/png;base64,{img_base64}",
-            "formats": ["latex_styled"]
-        }
-    )
-
-    if response.status_code != 200:
-        return ""
-
-    latex = response.json().get("latex_styled", "")
-
-    return clean_latex(latex)
-
-if st.button("Check my work"):
-
-    latex = image_to_latex(canvas_result.image_data)
-
-    if latex:
-        tutor_user_prompt = f"""
-Here is the student's handwritten mathematics, converted to LaTeX:
-
-{latex}
-
-Please:
-- Check whether the reasoning is correct.
-- If there is a small mistake, gently invite the student to check it.
-- If a rule is forgotten, ask first, then give it clearly.
-"""
-        with st.spinner("Thinking carefully..."):
-            tutor_feedback = ai_call(
-            TUTOR_SYSTEM_PROMPT,
-            tutor_user_prompt,
-            max_tokens=500,
-            temperature=0.3
-        )
-
-        # 🔑 Persist it
-        st.session_state.tutor_feedback = tutor_feedback
-        st.session_state.last_latex = latex
-
-if st.button("Teach me how to solve this"):
-
-    latex = image_to_latex(canvas_result.image_data)
-
-    if not latex:
-        st.warning("I couldn't read the exercise clearly yet.")
-    else:
-        methodology_prompt = f"""
-The student wrote the following mathematical exercise:
-
-{latex}
-
-The student does not know how to solve it.
-
-Please:
-- Identify what type of problem this is.
-- Explain the general method clearly.
-- Break the solution into structured steps.
-- Do NOT immediately give the final answer.
-- Encourage the student to try Step 1 first.
-"""
-        with st.spinner("Thinking carefully..."):
-            methodology_response = ai_call(
-            TUTOR_SYSTEM_PROMPT,
-            methodology_prompt,
-            max_tokens=500,
-            temperature=0.3
-        )
-
-        st.session_state.methodology = methodology_response
-        st.session_state.last_latex = latex
-   
-st.markdown("---")
 # -----------------------------
-# TUTOR CONVERSATION
+# 6. MAIN INTERFACE
 # -----------------------------
-st.subheader("Tutor")
+layers = ["Layer 1: Fractions", "Layer 2: Identities", "Layer 4: Graphs of functions"]
+chosen_layer = st.selectbox(texts["choose_layer"], layers)
 
-for msg in st.session_state.chat:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+if "Layer 4" in chosen_layer:
+    st.subheader("📊 Interactive Function Explorer")
+    col1, col2 = st.columns(2)
+    with col1: a = st.slider("Parameter a:", -5.0, 5.0, 1.0)
+    with col2: c = st.slider("Parameter c:", -10.0, 10.0, 0.0)
+    x = np.linspace(-10, 10, 400)
+    y = a * x**2 + c
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.plot(x, y, color='red', label=f"$y={a}x^2+{c}$")
+    ax.axhline(0, color='black', lw=1); ax.axvline(0, color='black', lw=1)
+    ax.grid(True, alpha=0.3); ax.legend()
+    st.pyplot(fig)
 
-user_input = st.chat_input("Tell me what you're thinking or ask me something")
+st.header(chosen_layer)
+canvas_result = st_canvas(
+    stroke_width=3 if st.session_state.tool=="pen" else 30,
+    stroke_color="#000000" if st.session_state.tool=="pen" else "#FFFFFF",
+    background_color="#FFFFFF", height=6000, width=1100,
+    drawing_mode="freedraw", key=f"canvas_{st.session_state.canvas_version}"
+)
 
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button(texts["check_work"]):
+        latex = image_to_latex(canvas_result.image_data)
+        if latex:
+            save_event("check_work", chosen_layer)
+            st.session_state.tutor_feedback = ai_call(TUTOR_SYSTEM_PROMPT, f"Check this: {latex}")
+            st.session_state.last_latex = latex
+with col2:
+    if st.button(texts["teach_me"]):
+        latex = image_to_latex(canvas_result.image_data)
+        if latex:
+            save_event("teach_me", chosen_layer)
+            st.session_state.methodology = ai_call(TUTOR_SYSTEM_PROMPT, f"Methodology for: {latex}")
+            st.session_state.last_latex = latex
+
+# -----------------------------
+# 7. RESULTS & CHAT
+# -----------------------------
+if "last_latex" in st.session_state: st.latex(st.session_state.last_latex)
+if "tutor_feedback" in st.session_state: st.info(st.session_state.tutor_feedback)
+if "methodology" in st.session_state: st.success(st.session_state.methodology)
+
+st.divider()
+user_input = st.chat_input(texts["chat_placeholder"])
 if user_input:
     st.session_state.chat.append({"role": "user", "content": user_input})
+    st.session_state.chat.append({"role": "assistant", "content": ai_call(TUTOR_SYSTEM_PROMPT, user_input)})
+    st.rerun()
 
-messages = [{"role": "system", "content": TUTOR_SYSTEM_PROMPT}]
-messages += st.session_state.chat
-
-
-if "tutor_feedback" in st.session_state:
-    st.markdown("### Tutor’s note")
-    st.write(st.session_state.tutor_feedback)
-
-if "methodology" in st.session_state:
-    st.markdown("### How to approach this problem")
-    st.write(st.session_state.methodology)
-
-if "last_latex" in st.session_state:
-    st.latex(st.session_state.last_latex)
+for msg in st.session_state.chat:
+    with st.chat_message(msg["role"]): st.write(msg["content"])
 
 
 
