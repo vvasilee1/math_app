@@ -10,6 +10,7 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
+import re
 
 # -----------------------------
 # 1. CONFIG & TRANSLATIONS
@@ -151,19 +152,58 @@ with st.sidebar:
 # -----------------------------
 # 4. API & DATABASE
 # -----------------------------
-client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+
 
 
 TUTOR_SYSTEM_PROMPT = """
 You are a Socratic math tutor. Respond strictly in {language}.
-- Use LaTeX $...$ for ALL math.
-- Never use plain symbols like ^ or sqrt.
-"""
 
+MATHEMATICAL OUTPUT RULES:
+- NEVER use backslashes (\), curly braces ({ }), or LaTeX commands (e.g., no \frac, no \sqrt).
+- Use plain text mathematical notation ONLY.
+- Use ^ for exponents (x^2).
+- Use / for fractions (1/2).
+- Use sqrt() for square roots.
+- Use * for multiplication.
+- Format equations clearly on their own lines.
+
+Example of allowed style: 
+'To solve x^2 = 9, you take the square root of both sides, so x = 3 or x = -3.'
+"""
 # -----------------------------
 # 5. HELPERS
 # -----------------------------
+def sanitize_math_output(text):
+    """
+    Removes common LaTeX fragments and converts basic ones 
+    to plain text as a safety net.
+    """
+    # Remove LaTeX delimiters like \( \) or \[ \]
+    text = re.sub(r'\\\(|\\\)|\\\[|\\\]', '', text)
+    
+    # Simple replacements for common symbols if the AI slips up
+    replacements = {
+        "\\times": "*",
+        "\\div": "/",
+        "\\pm": "+/-",
+        "\\approx": "≈",
+        "\\neq": "!=",
+        "\\cdot": "*",
+    }
+    for latex, plain in replacements.items():
+        text = text.replace(latex, plain)
+        
+    # Final pass: remove any remaining backslashes and words attached to them
+    # This acts as a 'scorched earth' policy for LaTeX commands
+    text = re.sub(r'\\[a-zA-Z]+', '', text)
+    
+    return text
 
+def clean_text(text):
+    text = re.sub(r"\$.*?\$", "", text)  # remove LaTeX blocks
+    return text
 
 def save_event(action, layer, tags=[]):
     try:
@@ -176,25 +216,63 @@ def save_event(action, layer, tags=[]):
     except Exception: pass
 
 def ai_call(system_prompt, user_content):
-    response = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=[
-            {"role": "system", "content": system_prompt.format(language=texts['lang_name'])},
-            {"role": "user", "content": user_content}
-        ],
-        temperature=0.3
-    )
-    return response.choices[0].message.content.strip()
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"The student's work/problem is: {user_content}"}
+            ],
+            temperature=0.2, # Lower temperature = more focused on rules
+            max_tokens=250,   # Keeps hints concise and costs low
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Tutor is resting briefly. Error: {e}"
 
-def image_to_latex(image_data):
-    if image_data is None: return ""
-    image = Image.fromarray(image_data.astype("uint8"))
+def get_cropped_image(canvas_result):
+    """Extracts the bounding box of the last drawn rectangle and crops the image."""
+    if canvas_result.json_data is not None:
+        objects = canvas_result.json_data.get("objects", [])
+        # Find the last 'rect' object drawn by the user
+        rects = [obj for obj in objects if obj['type'] == 'rect']
+        
+        if rects:
+            last_rect = rects[-1]
+            left = last_rect['left']
+            top = last_rect['top']
+            width = last_rect['width']
+            height = last_rect['height']
+            
+            # Convert canvas array to PIL Image
+            full_img = Image.fromarray(canvas_result.image_data.astype("uint8"))
+            
+            # Crop using the coordinates (left, top, right, bottom)
+            cropped_img = full_img.crop((left, top, left + width, top + height))
+            return cropped_img
+            
+    # Fallback: if no rect found, return the full image (converted to PIL)
+    return Image.fromarray(canvas_result.image_data.astype("uint8"))
+
+def image_to_latex(canvas_result):
+    if canvas_result.image_data is None: return ""
+    
+    # Get the focused crop
+    image = get_cropped_image(canvas_result)
+    
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     img_base64 = base64.b64encode(buffer.getvalue()).decode()
+    
     res = requests.post("https://api.mathpix.com/v3/text",
-        headers={"app_id": st.secrets["MATHPIX_APP_ID"], "app_key": st.secrets["MATHPIX_APP_KEY"]},
+        headers={
+            "app_id": st.secrets["MATHPIX_APP_ID"], 
+            "app_key": st.secrets["MATHPIX_APP_KEY"]
+        },
         json={"src": f"data:image/png;base64,{img_base64}", "formats": ["latex_styled"]})
+    
     return res.json().get("latex_styled", "")
 
 # -----------------------------
@@ -217,42 +295,80 @@ if "Layer 4" in chosen_layer:
     st.pyplot(fig)
 
 st.header(chosen_layer)
+if st.button("🔍 Focus Tool"): 
+    st.session_state.tool = "rect"
 canvas_result = st_canvas(
     stroke_width=3 if st.session_state.tool=="pen" else 30,
     stroke_color="#000000" if st.session_state.tool=="pen" else "#FFFFFF",
     background_color="#FFFFFF", height=6000, width=1100,
-    drawing_mode="freedraw", key=f"canvas_{st.session_state.canvas_version}"
+    drawing_mode="freedraw" if st.session_state.tool == "pen" else "rect"
 )
+TEACH_PROMPT = """
+You are a Socratic Math Tutor. Your goal is to guide the student to the answer without giving it away.
 
+STRICT OUTPUT RULES:
+1. NO LATEX: Never use backslashes (\), curly braces ({}), or commands like \frac, \sqrt, or \times.
+2. PLAIN MATH ONLY: 
+   - Use / for fractions (e.g., 3/4)
+   - Use ^ for exponents (e.g., x^2)
+   - Use * for multiplication (e.g., 5 * x)
+   - Use sqrt() for roots (e.g., sqrt(16))
+3. SOCRATIC METHOD: 
+   - Identify the student's problem from the provided text.
+   - Do not solve it for them.
+   - Ask ONE guiding question or provide ONE small hint about the first step.
+4. TONE: Encouraging, brief, and clear.
+
+Example of BAD response: "Use the quadratic formula: x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}"
+Example of GOOD response: "To start, look at the equation. Can you identify which numbers represent a, b, and c in the standard form ax^2 + bx + c = 0?"
+"""
+CHECK_PROMPT = """
+You are a Math Validator. 
+1. If the student's math is 100% correct, reply ONLY with a brief positive acknowledgment like "Perfect!" or "Spot on!"
+2. Do NOT suggest alternative methods or 'tutor hints' if the work is correct.
+3. If there is an error, briefly point out the specific step where the mistake occurred using PLAIN TEXT MATH (No LaTeX).
+"""
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button(texts["check_work"]):
         latex = image_to_latex(canvas_result.image_data)
         if latex:
             save_event("check_work", chosen_layer)
-            st.session_state.tutor_feedback = ai_call(TUTOR_SYSTEM_PROMPT, f"Check this: {latex}")
+            st.session_state.tutor_feedback = clean_text(
+                                              ai_call(CHECK_PROMPT, f"{latex}")
+                                              )
             st.session_state.last_latex = latex
 with col2:
     if st.button(texts["teach_me"]):
         latex = image_to_latex(canvas_result.image_data)
         if latex:
             save_event("teach_me", chosen_layer)
-            st.session_state.methodology = ai_call(TUTOR_SYSTEM_PROMPT, f"Methodology for: {latex}")
+            st.session_state.methodology = ai_call(TEACH_PROMPT,f"{latex}")
             st.session_state.last_latex = latex
 
+uploaded_file = st.file_uploader("📷 Upload your exercise", type=["png", "jpg", "jpeg"])
+latex = ""
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    latex = image_to_latex(np.array(image))
+elif canvas_result.image_data is not None:
+    latex = image_to_latex(canvas_result.image_data)
 # -----------------------------
 # 7. RESULTS & CHAT
 # -----------------------------
-if "last_latex" in st.session_state: st.latex(st.session_state.last_latex)
-if "tutor_feedback" in st.session_state: st.info(st.session_state.tutor_feedback)
+#if "last_latex" in st.session_state: st.latex(st.session_state.last_latex)
+if "tutor_feedback" in st.session_state:
+    clean_feedback = sanitize_math_output(st.session_state.tutor_feedback)
+    st.info(clean_feedback)
 if "methodology" in st.session_state: st.success(st.session_state.methodology)
 
 st.divider()
 user_input = st.chat_input(texts["chat_placeholder"])
 if user_input:
-    st.session_state.chat.append({"role": "user", "content": user_input})
-    st.session_state.chat.append({"role": "assistant", "content": ai_call(TUTOR_SYSTEM_PROMPT, user_input)})
-    st.rerun()
+    raw_response = ai_call(TUTOR_SYSTEM_PROMPT, user_input)
+    clean_response = sanitize_math_output(raw_response)
+    st.session_state.chat.append({"role": "assistant", "content": clean_response})
 
 for msg in st.session_state.chat:
     with st.chat_message(msg["role"]): st.write(msg["content"])
