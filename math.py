@@ -149,7 +149,7 @@ canvas_result = st_canvas(
     stroke_width=3 if st.session_state.tool == "pen" else 40,
     stroke_color="#000000" if st.session_state.tool != "eraser" else "#FFFFFF",
     background_color="#FFFFFF",
-    height=2000, width=1100, 
+    height=4000, width=1100, 
     drawing_mode="freedraw" if st.session_state.tool != "rect" else "rect",
     key=f"canvas_{st.session_state.canvas_version}"
 )
